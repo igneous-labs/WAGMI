@@ -1,0 +1,11 @@
+solana_program::declare_id!("3dQhmbCccZTtU1KYqW13XCD5CDKgw4s6NoiGLqPwv4QF");
+pub mod accounts;
+pub use accounts::*;
+pub mod typedefs;
+pub use typedefs::*;
+pub mod instructions;
+pub use instructions::*;
+pub mod errors;
+pub use errors::*;
+pub mod events;
+pub use events::*;
