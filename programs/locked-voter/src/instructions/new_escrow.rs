@@ -46,10 +46,10 @@ impl<'info> NewEscrow<'info> {
             &self.locker.token_mint,
         );
         escrow.amount = 0;
-        escrow.escrow_started_at = 0;
-        escrow.escrow_ends_at = 0;
+        escrow.escrow_started_at = Clock::get()?.unix_timestamp;
+        escrow.escrow_ends_at = i64::MAX;
         escrow.vote_delegate = self.escrow_owner.key();
-        escrow.is_max_lock = false;
+        escrow.is_max_lock = true;
 
         let locker = &mut self.locker;
         locker.total_escrow = unwrap_int!(locker.total_escrow.checked_add(1));
