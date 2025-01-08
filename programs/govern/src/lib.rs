@@ -19,7 +19,7 @@ pub use instructions::*;
 pub use proposal::*;
 pub use state::*;
 
-declare_id!("GovaE4iu227srtG2s3tZzB4RmWBzw8sTwrCLZz7kN7rY");
+declare_id!("HWKB16ucqqFRZ5W768FA58fVuqJLGw6v9YdGtmfBUAgj");
 
 /// The [govern] program.
 #[program]

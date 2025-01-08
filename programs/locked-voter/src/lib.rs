@@ -17,7 +17,7 @@ mod state;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("voTpe3tHQ7AjQHMapgSue2HJFAh2cGsdokqN3XqmVSj");
+declare_id!("GJ3DSRYMLRoqjVgtj1JwdFXQU4FNzvgjGUfYyE4u1JMa");
 
 /// Locked voter program.
 #[deny(missing_docs)]
