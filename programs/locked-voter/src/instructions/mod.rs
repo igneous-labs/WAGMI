@@ -10,7 +10,6 @@ pub mod new_locker;
 pub mod open_partial_unstaking;
 pub mod set_locker_params;
 pub mod set_vote_delegate;
-pub mod toggle_max_lock;
 pub mod withdraw;
 pub mod withdraw_partial_unstaking;
 
@@ -24,6 +23,5 @@ pub use new_locker::*;
 pub use open_partial_unstaking::*;
 pub use set_locker_params::*;
 pub use set_vote_delegate::*;
-pub use toggle_max_lock::*;
 pub use withdraw::*;
 pub use withdraw_partial_unstaking::*;
