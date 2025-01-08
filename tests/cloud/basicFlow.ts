@@ -34,16 +34,16 @@ const provider = anchor.AnchorProvider.env();
 const userCount = 3;
 const lockAmount = new BN(100);
 
-describe("Locked voter", () => {
+describe("Uses (mainly) locked voter to simulate a real world use case of $CLOUD staking", () => {
 	let locker: web3.PublicKey;
 	let govern: web3.PublicKey;
 	let smartWallet: web3.PublicKey;
 
-	let wallet: Wallet;
-	let keypair: web3.Keypair;
+	let base_wallet: Wallet;
+	let base_keypair: web3.Keypair;
 
 	let cloudMint: web3.PublicKey;
-	let userKeypairs: web3.Keypair[] = [];
+	let stakerKeypairs: web3.Keypair[] = [];
 
 	// Smart wallet config
 	let smartWalletOwners: web3.PublicKey[] = [];
@@ -60,7 +60,7 @@ describe("Locked voter", () => {
 	const proposalActivationMinVotes: BN = new BN(2); // min 2 vote to activate proposal
 
 	async function initializeLocker() {
-		const voterProgram = createLockedVoterProgram(wallet, LOCKED_VOTER_PROGRAM_ID);
+		const voterProgram = createLockedVoterProgram(base_wallet, LOCKED_VOTER_PROGRAM_ID);
 		await voterProgram.methods
 			.newLocker({
 				maxStakeDuration,
@@ -69,7 +69,7 @@ describe("Locked voter", () => {
 				proposalActivationMinVotes,
 			})
 			.accounts({
-				base: keypair.publicKey,
+				base: base_keypair.publicKey,
 				locker,
 				tokenMint: cloudMint,
 				governor: govern,
@@ -82,28 +82,28 @@ describe("Locked voter", () => {
 	// This is mostly what we will do after program deploy once
 	before(async () => {
 		const result = await createAndFundWallet(provider.connection);
-		keypair = result.keypair;
-		wallet = result.wallet;
+		base_keypair = result.keypair;
+		base_wallet = result.wallet;
 
-		const [lockerPda, _lBump] = deriveLocker(keypair.publicKey, LOCKED_VOTER_PROGRAM_ID);
+		const [lockerPda, _lBump] = deriveLocker(base_keypair.publicKey, LOCKED_VOTER_PROGRAM_ID);
 		locker = lockerPda;
 
-		const [governPda, _gBump] = deriveGovern(keypair.publicKey);
+		const [governPda, _gBump] = deriveGovern(base_keypair.publicKey);
 		govern = governPda;
 
-		const [smartWalletPda, _sBump] = deriveSmartWallet(keypair.publicKey);
+		const [smartWalletPda, _sBump] = deriveSmartWallet(base_keypair.publicKey);
 		smartWallet = smartWalletPda;
 
 		smartWalletOwners.push(governPda);
-		smartWalletOwners.push(wallet.publicKey);
+		smartWalletOwners.push(base_wallet.publicKey);
 
 		await createSmartWallet(
 			smartWalletOwners,
 			smartWalletOwners.length,
 			new BN(0),
 			smartWalletThreshold,
-			keypair,
-			createSmartWalletProgram(wallet, SMART_WALLET_PROGRAM_ID)
+			base_keypair,
+			createSmartWalletProgram(base_wallet, SMART_WALLET_PROGRAM_ID)
 		);
 
 		await createGovernor(
@@ -111,18 +111,24 @@ describe("Locked voter", () => {
 			votingPeriod,
 			quorumVotes,
 			new BN(0),
-			keypair,
+			base_keypair,
 			smartWallet,
-			createGovernProgram(wallet, GOVERN_PROGRAM_ID),
+			createGovernProgram(base_wallet, GOVERN_PROGRAM_ID),
 			LOCKED_VOTER_PROGRAM_ID
 		);
 
-		cloudMint = await createMint(provider.connection, keypair, keypair.publicKey, null, 9);
+		cloudMint = await createMint(
+			provider.connection,
+			base_keypair,
+			base_keypair.publicKey,
+			null,
+			9
+		);
 
 		// Give each user $CLOUD
 		for (let i = 0; i < userCount; i++) {
 			const result = await createAndFundWallet(provider.connection);
-			userKeypairs.push(result.keypair);
+			stakerKeypairs.push(result.keypair);
 
 			const userATA = await getOrCreateATA(
 				cloudMint,
@@ -133,10 +139,10 @@ describe("Locked voter", () => {
 
 			await mintTo(
 				provider.connection,
-				keypair,
+				base_keypair,
 				cloudMint,
 				userATA,
-				keypair.publicKey,
+				base_keypair.publicKey,
 				lockAmount.toNumber() * 2
 			);
 		}
@@ -147,31 +153,31 @@ describe("Locked voter", () => {
 	// Multiple user stake-unstake-cancel-unstake-withdraw scenarios
 	it("goes through the happy path", async () => {
 		// Initialize escrows for our users and let them stake the first time
-		for (const keypair of userKeypairs) {
-			const wallet = new Wallet(keypair);
-			const voterProgram = createLockedVoterProgram(wallet, LOCKED_VOTER_PROGRAM_ID);
-			const [escrow, _bump] = deriveEscrow(locker, wallet.publicKey, LOCKED_VOTER_PROGRAM_ID);
+		for (const stakerKeypair of stakerKeypairs) {
+			const stakerWallet = new Wallet(stakerKeypair);
+			const voterProgram = createLockedVoterProgram(stakerWallet, LOCKED_VOTER_PROGRAM_ID);
+			const [escrow, _bump] = deriveEscrow(locker, stakerWallet.publicKey, LOCKED_VOTER_PROGRAM_ID);
 
 			// Escrow is what each user starts to have on first stake
 			await voterProgram.methods
 				.newEscrow()
 				.accounts({
 					escrow,
-					escrowOwner: wallet.publicKey,
+					escrowOwner: stakerWallet.publicKey,
 					locker,
-					payer: wallet.publicKey,
+					payer: stakerWallet.publicKey,
 					systemProgram: web3.SystemProgram.programId,
 				})
 				.rpc();
 
 			// On the frontend probably just add create ata idempotent ix to the tx if user is new?
-			const escrowATA = await getOrCreateATA(cloudMint, escrow, keypair, provider.connection);
+			const escrowATA = await getOrCreateATA(cloudMint, escrow, stakerKeypair, provider.connection);
 
 			// Cloud ATA
 			const userATA = await getOrCreateATA(
 				cloudMint,
-				wallet.publicKey,
-				keypair,
+				stakerWallet.publicKey,
+				stakerKeypair,
 				provider.connection
 			);
 
@@ -213,17 +219,17 @@ describe("Locked voter", () => {
 		}
 
 		// Let users stake once more each (same process testing multiple staking attempts)
-		for (const keypair of userKeypairs) {
-			const wallet = new Wallet(keypair);
-			const voterProgram = createLockedVoterProgram(wallet, LOCKED_VOTER_PROGRAM_ID);
-			const [escrow, _bump] = deriveEscrow(locker, wallet.publicKey, LOCKED_VOTER_PROGRAM_ID);
+		for (const stakerKeypair of stakerKeypairs) {
+			const stakerWallet = new Wallet(stakerKeypair);
+			const voterProgram = createLockedVoterProgram(stakerWallet, LOCKED_VOTER_PROGRAM_ID);
+			const [escrow, _bump] = deriveEscrow(locker, stakerWallet.publicKey, LOCKED_VOTER_PROGRAM_ID);
 
-			const escrowATA = await getOrCreateATA(cloudMint, escrow, keypair, provider.connection);
+			const escrowATA = await getOrCreateATA(cloudMint, escrow, stakerKeypair, provider.connection);
 
 			const userATA = await getOrCreateATA(
 				cloudMint,
-				wallet.publicKey,
-				keypair,
+				stakerWallet.publicKey,
+				stakerKeypair,
 				provider.connection
 			);
 
@@ -250,10 +256,10 @@ describe("Locked voter", () => {
 		}
 
 		// Each user will unstake, cancel unstake, unstake again, claim unstake after period
-		for (const keypair of userKeypairs) {
-			const wallet = new Wallet(keypair);
-			const voterProgram = createLockedVoterProgram(wallet, LOCKED_VOTER_PROGRAM_ID);
-			const [escrow, _bump] = deriveEscrow(locker, wallet.publicKey, LOCKED_VOTER_PROGRAM_ID);
+		for (const stakerKeypair of stakerKeypairs) {
+			const stakerWallet = new Wallet(stakerKeypair);
+			const voterProgram = createLockedVoterProgram(stakerWallet, LOCKED_VOTER_PROGRAM_ID);
+			const [escrow, _bump] = deriveEscrow(locker, stakerWallet.publicKey, LOCKED_VOTER_PROGRAM_ID);
 			// We actually care about this keypair so we can later cancel/claim
 			// i guess we can memcmp and use escrow and memo fields from acc data
 			const partialUnstakeKP = web3.Keypair.generate();
@@ -266,10 +272,10 @@ describe("Locked voter", () => {
 					locker,
 					escrow,
 					partialUnstake: partialUnstakeKP.publicKey,
-					owner: wallet.publicKey,
+					owner: stakerWallet.publicKey,
 					systemProgram: web3.SystemProgram.programId,
 				})
-				.signers([partialUnstakeKP, keypair])
+				.signers([partialUnstakeKP, stakerKeypair])
 				.rpc();
 
 			let partialUnstakingState = await voterProgram.account.partialUnstaking.fetch(
@@ -290,7 +296,7 @@ describe("Locked voter", () => {
 					locker,
 					escrow,
 					partialUnstake: partialUnstakeKP.publicKey,
-					owner: wallet.publicKey,
+					owner: stakerWallet.publicKey,
 				})
 				.rpc();
 
@@ -307,10 +313,10 @@ describe("Locked voter", () => {
 					locker,
 					escrow,
 					partialUnstake: partialUnstakeKP.publicKey,
-					owner: wallet.publicKey,
+					owner: stakerWallet.publicKey,
 					systemProgram: web3.SystemProgram.programId,
 				})
-				.signers([partialUnstakeKP, keypair])
+				.signers([partialUnstakeKP, stakerKeypair])
 				.rpc();
 
 			let escrowStateAfterRecreate = await voterProgram.account.escrow.fetch(escrow);
@@ -322,11 +328,11 @@ describe("Locked voter", () => {
 			assert(escrowStateAfterRecreate.amount.toNumber() === lockAmount.toNumber());
 			assert(partialUnstakingStateAfterRecreate.amount.toNumber() === lockAmount.toNumber());
 
-			const escrowATA = await getOrCreateATA(cloudMint, escrow, keypair, provider.connection);
+			const escrowATA = await getOrCreateATA(cloudMint, escrow, stakerKeypair, provider.connection);
 			const userATA = await getOrCreateATA(
 				cloudMint,
-				wallet.publicKey,
-				keypair,
+				stakerWallet.publicKey,
+				stakerKeypair,
 				provider.connection
 			);
 
@@ -360,10 +366,10 @@ describe("Locked voter", () => {
 				.withdrawPartialUnstaking()
 				.accounts({
 					locker,
-					payer: wallet.publicKey,
+					payer: stakerWallet.publicKey,
 					escrow,
 					escrowTokens: escrowATA,
-					owner: wallet.publicKey,
+					owner: stakerWallet.publicKey,
 					partialUnstake: partialUnstakeKP.publicKey,
 					destinationTokens: userATA,
 					tokenProgram: TOKEN_PROGRAM_ID,
